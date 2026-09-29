@@ -1,0 +1,16 @@
+{
+  "name": "technolounge-2026",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TechnoLounge 2026 booth timer and income tracker",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
+  }
+}

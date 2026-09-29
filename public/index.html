@@ -127,6 +127,14 @@
   .choice3 button { padding: 12px 4px; border: 2px solid var(--c); color: var(--c); background: var(--panel2); }
   .link { background: none; border: 0; color: var(--muted); text-decoration: underline; margin-top: 12px; font-weight: 400; }
   .queue { font-size: 12px; color: var(--warn); margin-top: 8px; }
+  .lock { position: fixed; inset: 0; z-index: 80; display: none; align-items: center; justify-content: center; padding: 16px; background: var(--bg);
+          background-image: radial-gradient(circle at 20% -10%, #1d2b5c 0, transparent 45%), radial-gradient(circle at 110% 10%, #2a1d5c 0, transparent 40%); }
+  .lock.show { display: flex; }
+  .lock form { width: 100%; max-width: 360px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 24px; text-align: center; }
+  .lock h2 { margin: 6px 0 4px; font-size: 22px; }
+  .lock h2 span { color: var(--accent); }
+  .lock p { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+  .lock input { text-align: center; font-size: 20px; letter-spacing: 2px; }
   .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line);
            padding: 10px 16px; border-radius: 10px; z-index: 60; display: none; }
 </style>
@@ -137,6 +145,7 @@
   <div class="hdr-actions">
     <span class="clock" id="clock">--:--:--</span>
     <button class="btn-sm" id="soundBtn" title="Toggle alert sound on this device">🔔 Sound on</button>
+    <button class="btn-sm" id="lockBtn" title="Lock this device" style="display:none">🔒</button>
   </div>
 </header>
 
@@ -263,6 +272,18 @@
 </div>
 <div class="toast" id="toast"></div>
 
+<!-- Access code screen (only when the server has an ACCESS_CODE set) -->
+<div class="lock" id="lock">
+  <form id="lockForm" autocomplete="off">
+    <div style="font-size:40px">🔒</div>
+    <h2>TechnoLounge <span>2026</span></h2>
+    <p>Enter the team access code to continue.</p>
+    <input id="code" type="password" inputmode="text" placeholder="Access code" required>
+    <button class="btn-primary" type="submit">Unlock</button>
+    <div class="err" id="lockErr"></div>
+  </form>
+</div>
+
 <script>
 const PASS_MIN = { KB: 15, MB: 30, GB: 60 };
 const PASS_COLOR = { KB: 'var(--kb)', MB: 'var(--mb)', GB: 'var(--gb)' };
@@ -296,13 +317,39 @@ const now = () => Date.now() + offset;
 async function api(method, url, body) {
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
   const data = await r.json();
+  if (r.status === 401 && data.error === 'locked') { showLock(); const e = new Error('Locked'); e.locked = true; throw e; }
   if (!r.ok) throw new Error(data.error || 'Request failed');
+  $('lock').classList.remove('show');
+  $('lockBtn').style.display = data.authRequired ? '' : 'none';
   offset = data.now - Date.now();
   sessions = data.sessions;
   render();
   return data;
 }
-const refresh = () => api('GET', '/api/sessions').catch(() => toast('⚠ Cannot reach server'));
+const refresh = () => api('GET', '/api/sessions').catch((e) => { if (!e.locked) toast('⚠ Cannot reach server'); });
+
+// ---------- Access code ----------
+function showLock() {
+  if ($('lock').classList.contains('show')) return;
+  sessions = []; lastActiveKey = lastHistHtml = lastIncomeKey = null; closeModal(); render();
+  $('lock').classList.add('show');
+  $('code').focus();
+}
+$('lockForm').onsubmit = async (e) => {
+  e.preventDefault();
+  $('lockErr').textContent = '';
+  const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: $('code').value }) })
+    .catch(() => null);
+  if (!r) { $('lockErr').textContent = 'Cannot reach server'; return; }
+  if (!r.ok) { $('lockErr').textContent = (await r.json()).error || 'Wrong access code'; return; }
+  $('code').value = '';
+  await refresh();
+  setNow();
+};
+$('lockBtn').onclick = async () => {
+  await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+  showLock();
+};
 
 // ---------- Form ----------
 function setNow() {
